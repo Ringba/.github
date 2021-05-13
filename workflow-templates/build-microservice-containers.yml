@@ -4,9 +4,13 @@ name: Build Containers
 
 # Controls when the action will run. 
 on:
-  
-  # Triggers the workflow on push or pull request events but only for the dev branch
+  # Triggers the workflow on push only on the dev branch
   push:
+    #branches:
+    #  - master
+    #  - dev
+    #  - staging
+    #  - peter-ringba/ch6857/create-iawssecretssettingservice-and-its
 
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
@@ -71,8 +75,15 @@ jobs:
           for changed_file in $files; do
             echo "${changed_file}"
 
-            name=`echo "${changed_file}" | awk 'BEGIN {FS = "/" } {f=NF-1} {print tolower($f)}'`
             folder=`echo "$(dirname "${changed_file}")" `
+
+            name=`grep DockerfileTag ${folder}/*.csproj |   awk '{ gsub(/<\/?DockerfileTag>/,"");  gsub(/ /,""); print }' | awk 'BEGIN {FS = "/" } {f=NF} {print tolower($f)}'`
+
+            if [ -z "$name" ]
+            then 
+                name=`echo "${changed_file}" | awk 'BEGIN {FS = "/" } {f=NF-1} {print tolower($f)}'`
+            fi
+
             version=`grep tag: ${changed_file} | awk 'BEGIN {FS = ":" }  {print tolower($NF)}' | awk '{ gsub(/ /,""); print }'`
             tag=$version
 
@@ -90,14 +101,17 @@ jobs:
             fi
 
             images=`aws ecr list-images  --repository-name $repoPrefix/${name} `
+
             imageExists=`echo "$images" | grep $tag | wc | awk '{ print $1}'`
-            
-            if [ $imageExists == "0" ]
+            imageProdDoesExists=`echo "$images" | grep $version | wc | awk '{ print $1}'`
+
+            if [ $imageExists == "0" -a $imageProdDoesExists == "0" ]
             then
               imageName=$ECR_REGISTRY/$repoPrefix/${name}
 
               echo "building repository $imageName"
-              docker build --build-arg FEED_USERNAME=${{ secrets.FEED_USERNAME }} --build-arg FEED_ACCESSTOKEN=${{ secrets.FEED_TOKEN }} -t $imageName:$tag -t $imageName:latest -f ${folder}/Dockerfile .
+
+              DOCKER_BUILDKIT=1 docker build --build-arg FEED_USERNAME=${{ secrets.FEED_USERNAME }} --build-arg FEED_ACCESSTOKEN=${{ secrets.FEED_TOKEN }} -t $imageName:$tag -t $imageName:latest -f ${folder}/Dockerfile .
 
               docker push $imageName:$tag
 
